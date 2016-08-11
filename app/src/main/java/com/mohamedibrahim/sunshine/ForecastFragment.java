@@ -54,7 +54,7 @@ public class ForecastFragment extends Fragment implements AsyncResponse {
     @Override
     public void onStart() {
         super.onStart();
-        updateWeather();
+        updateWeather(mForecastAdapter);
     }
 
     @Override
@@ -67,7 +67,7 @@ public class ForecastFragment extends Fragment implements AsyncResponse {
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.action_refresh:
-                updateWeather();
+                updateWeather(mForecastAdapter);
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -95,12 +95,12 @@ public class ForecastFragment extends Fragment implements AsyncResponse {
         });
     }
 
-    private void updateWeather() {
+    private void updateWeather(ArrayAdapter mForecastAdapter) {
         preferences = PreferenceManager.getDefaultSharedPreferences(getActivity());
         location = preferences.getString(getString(R.string.pref_location_key),
                 getString(R.string.pref_location_default));
 
-        FetchWeatherTask fetchWeatherTask = new FetchWeatherTask(this,getActivity());
+        FetchWeatherTask fetchWeatherTask = new FetchWeatherTask(this,getActivity(),mForecastAdapter);
         fetchWeatherTask.execute(location);
     }
 }

@@ -1,5 +1,6 @@
 package com.mohamedibrahim.sunshine;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -7,6 +8,9 @@ import android.os.AsyncTask;
 import android.preference.PreferenceManager;
 import android.text.format.Time;
 import android.util.Log;
+import android.widget.ArrayAdapter;
+
+import com.mohamedibrahim.sunshine.data.WeatherContract.WeatherEntry;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -19,6 +23,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.util.Vector;
 
 /**
  * Created by Mohamed Ibrahim on 7/21/2016.
@@ -32,10 +37,13 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
     private HttpURLConnection urlConnection = null;
     private BufferedReader reader = null;
     private String forecastJsonStr = null;
+    private ArrayAdapter<String> mForecastAdapter;
+    private boolean DEBUG = true;
 
-    public FetchWeatherTask(AsyncResponse delegate, Context context) {
+    public FetchWeatherTask(AsyncResponse delegate, Context context, ArrayAdapter<String> mForecastAdapter) {
         this.delegate = delegate;
         this.context = context;
+        this.mForecastAdapter = mForecastAdapter;
     }
 
     @Override
@@ -144,7 +152,7 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
     /**
      * Take the String representing the complete forecast in JSON Format and
      * pull out the data we need to construct the Strings needed for the wireframes.
-     * <p/>
+     * <p>
      * Fortunately parsing is easy:  constructor takes the JSON string and converts it
      * into an Object hierarchy for us.
      */
@@ -152,11 +160,26 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
             throws JSONException {
 
         final String OWM_LIST = "list";
+        final String OWM_WEATHER_ID = "id";
         final String OWM_WEATHER = "weather";
         final String OWM_TEMPERATURE = "temp";
         final String OWM_MAX = "max";
         final String OWM_MIN = "min";
         final String OWM_DESCRIPTION = "main";
+
+        // Location information
+        final String OWM_CITY = "city";
+        final String OWM_CITY_NAME = "name";
+        final String OWM_COORD = "coord";
+
+        // Location coordinate
+        final String OWM_LATITUDE = "lat";
+        final String OWM_LONGITUDE = "lon";
+
+        final String OWM_PRESSURE = "pressure";
+        final String OWM_HUMIDITY = "humidity";
+        final String OWM_WINDSPEED = "speed";
+        final String OWM_WIND_DIRECTION = "deg";
 
         // Since this data is also sent in-order and the first day is always the
         // current day, we're going to take advantage of that to get a nice
@@ -176,19 +199,9 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
         // properly.
         JSONObject forecastJson = new JSONObject(forecastJsonStr);
         JSONArray weatherWeekArray = forecastJson.getJSONArray(OWM_LIST);
-
+        //TODO:remain all parameters to be defined
         String[] resultStrs = new String[numDays];
 
-        // Data is fetched in Celsius by default.
-        // If user prefers to see in Fahrenheit, convert the values here.
-        // We do this rather than fetching in Fahrenheit so that the user can
-        // change this option without us having to re-fetch the data once
-        // we start storing the values in a database.
-        SharedPreferences sharedPrefs =
-                PreferenceManager.getDefaultSharedPreferences(context);
-        String unitType = sharedPrefs.getString(
-                context.getString(R.string.pref_units_key),
-                context.getString(R.string.pref_units_metric));
 
         for (int i = 0; i < weatherWeekArray.length(); i++) {
             // For now, using the format "Day, description, hi/low"
@@ -217,10 +230,24 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
             double high = temperatureObject.getDouble(OWM_MAX);
             double low = temperatureObject.getDouble(OWM_MIN);
 
-            highAndLow = formatHighLows(high, low, unitType);
+            highAndLow = formatHighLows(high, low, getUnitType());
             resultStrs[i] = day + " - " + description + " - " + highAndLow;
         }
         return resultStrs;
+    }
+
+    private String getUnitType() {
+        // Data is fetched in Celsius by default.
+        // If user prefers to see in Fahrenheit, convert the values here.
+        // We do this rather than fetching in Fahrenheit so that the user can
+        // change this option without us having to re-fetch the data once
+        // we start storing the values in a database.
+        SharedPreferences sharedPrefs =
+                PreferenceManager.getDefaultSharedPreferences(context);
+        String unitType = sharedPrefs.getString(
+                context.getString(R.string.pref_units_key),
+                context.getString(R.string.pref_units_metric));
+        return unitType;
     }
 
     /* The date/time conversion code is going to be moved outside the asynctask later,
@@ -250,5 +277,42 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
 
         String highLowStr = roundedHigh + "/" + roundedLow;
         return highLowStr;
+    }
+
+    /**
+     * Helper method to handle insertion of a new location in the weather database.
+     *
+     * @param locationSetting The location string used to request updates from the server.
+     * @param cityName        A human-readable city name, e.g "Mountain View"
+     * @param lat             the latitude of the city
+     * @param lon             the longitude of the city
+     * @return the row ID of the added location.
+     */
+    long addLocation(String locationSetting, String cityName, double lat, double lon) {
+        // Students: First, check if the location with this city name exists in the db
+        // If it exists, return the current ID
+        // Otherwise, insert it using the content resolver and the base URI
+        return -1;
+    }
+
+    /*
+        Students: This code will allow the FetchWeatherTask to continue to return the strings that
+        the UX expects so that we can continue to test the application even once we begin using
+        the database.
+     */
+    String[] convertContentValuesToUXFormat(Vector<ContentValues> cvv) {
+        // return strings to keep UI functional for now
+        String[] resultStrs = new String[cvv.size()];
+        for (int i = 0; i < cvv.size(); i++) {
+            ContentValues weatherValues = cvv.elementAt(i);
+            String highAndLow = formatHighLows(
+                    weatherValues.getAsDouble(WeatherEntry.COLUMN_MAX_TEMP),
+                    weatherValues.getAsDouble(WeatherEntry.COLUMN_MIN_TEMP), getUnitType());
+            resultStrs[i] = getReadableDateString(
+                    weatherValues.getAsLong(WeatherEntry.COLUMN_DATE)) +
+                    " - " + weatherValues.getAsString(WeatherEntry.COLUMN_SHORT_DESC) +
+                    " - " + highAndLow;
+        }
+        return resultStrs;
     }
 }
