@@ -3,15 +3,11 @@ package com.mohamedibrahim.sunshine;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.database.DatabaseUtils;
 import android.net.Uri;
 import android.os.AsyncTask;
-import android.preference.PreferenceManager;
 import android.text.format.Time;
 import android.util.Log;
-import android.widget.ArrayAdapter;
 
 import com.mohamedibrahim.sunshine.data.WeatherContract;
 import com.mohamedibrahim.sunshine.data.WeatherContract.WeatherEntry;
@@ -26,28 +22,22 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.text.SimpleDateFormat;
 import java.util.Vector;
 
 /**
  * Created by Mohamed Ibrahim on 7/21/2016.
  */
 
-public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
+public class FetchWeatherTask extends AsyncTask<String, Void, Void> {
 
     private final String LOG_TAG = FetchWeatherTask.class.getSimpleName();
-    private AsyncResponse delegate = null;
     Context mContext = null;
     private HttpURLConnection urlConnection = null;
     private BufferedReader reader = null;
     private String forecastJsonStr = null;
-    private ArrayAdapter<String> mForecastAdapter;
-    private boolean DEBUG = true;
 
-    public FetchWeatherTask(AsyncResponse delegate, Context mContext, ArrayAdapter<String> mForecastAdapter) {
-        this.delegate = delegate;
+    public FetchWeatherTask(Context mContext) {
         this.mContext = mContext;
-        this.mForecastAdapter = mForecastAdapter;
     }
 
     @Override
@@ -57,7 +47,7 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
     }
 
     @Override
-    protected String[] doInBackground(String... strings) {
+    protected Void doInBackground(String... strings) {
 
         final String FORECAST_BASE_URL =
                 "http://api.openweathermap.org/data/2.5/forecast/daily?";
@@ -101,12 +91,11 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
             }
             forecastJsonStr = getStringData(input);
             try {
-                return getWeatherDataFromJson(forecastJsonStr, numDays, locationQuery);
+                getWeatherDataFromJson(forecastJsonStr, locationQuery);
             } catch (JSONException e) {
                 e.printStackTrace();
             }
         } catch (IOException e) {
-            return null;
         } finally {
             if (urlConnection != null) {
                 urlConnection.disconnect();
@@ -123,13 +112,6 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
         return null;
     }
 
-    @Override
-    protected void onPostExecute(String[] strings) {
-        if (delegate != null) {
-            delegate.processFinish(strings);
-        } else {
-        }
-    }
 
     private String getStringData(InputStream input) {
         try {
@@ -156,7 +138,7 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
         }
     }
 
-    private String[] getWeatherDataFromJson(String forecastJsonStr, int numDays, String locationSetting)
+    private void getWeatherDataFromJson(String forecastJsonStr, String locationSetting)
             throws JSONException {
 
         final String OWM_LIST = "list";
@@ -243,6 +225,8 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
 
             cVVector.add(weatherValues);
         }
+        int inserted = 0;
+
         // add to database
         if (cVVector.size() > 0) {
             ContentValues[] cvArray = new ContentValues[cVVector.size()];
@@ -250,27 +234,7 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
             mContext.getContentResolver().bulkInsert(WeatherEntry.CONTENT_URI, cvArray);
         }
 
-        // Sort order:  Ascending, by date.
-        String sortOrder = WeatherEntry.COLUMN_DATE + " ASC";
-        Uri weatherForLocationUri = WeatherEntry.buildWeatherLocationWithStartDate(
-                locationSetting, System.currentTimeMillis());
-
-        Cursor cur = mContext.getContentResolver().query(weatherForLocationUri,
-                null, null, null, sortOrder);
-
-        cVVector = new Vector<ContentValues>(cur.getCount());
-        if (cur.moveToFirst()) {
-            do {
-                ContentValues cv = new ContentValues();
-                DatabaseUtils.cursorRowToContentValues(cur, cv);
-                cVVector.add(cv);
-            } while (cur.moveToNext());
-        }
-
-        Log.d(LOG_TAG, "FetchWeatherTask Complete. " + cVVector.size() + " Inserted");
-
-        String[] resultStrs = convertContentValuesToUXFormat(cVVector);
-        return resultStrs;
+        Log.d(LOG_TAG, "FetchWeatherTask Complete. " + inserted + " Inserted");
     }
 
     /**
@@ -315,60 +279,4 @@ public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
         locationCursor.close();
         return locationId;
     }
-
-
-    String[] convertContentValuesToUXFormat(Vector<ContentValues> cvv) {
-        String[] resultStrs = new String[cvv.size()];
-        for (int i = 0; i < cvv.size(); i++) {
-            ContentValues weatherValues = cvv.elementAt(i);
-            String highAndLow = formatHighLows(
-                    weatherValues.getAsDouble(WeatherEntry.COLUMN_MAX_TEMP),
-                    weatherValues.getAsDouble(WeatherEntry.COLUMN_MIN_TEMP), getUnitType());
-            resultStrs[i] = getReadableDateString(
-                    weatherValues.getAsLong(WeatherEntry.COLUMN_DATE)) +
-                    " - " + weatherValues.getAsString(WeatherEntry.COLUMN_SHORT_DESC) +
-                    " - " + highAndLow;
-        }
-        return resultStrs;
-    }
-
-    private String getUnitType() {
-
-        SharedPreferences sharedPrefs =
-                PreferenceManager.getDefaultSharedPreferences(mContext);
-        String unitType = sharedPrefs.getString(
-                mContext.getString(R.string.pref_units_key),
-                mContext.getString(R.string.pref_units_metric));
-        return unitType;
-    }
-
-    /* The date/time conversion code is going to be moved outside the asynctask later,
-     * so for convenience we're breaking it out into its own method now.
-      */
-    private String getReadableDateString(long time) {
-        // Because the API returns a unix timestamp (measured in seconds),
-        // it must be converted to milliseconds in order to be converted to valid date.
-        SimpleDateFormat shortenedDateFormat = new SimpleDateFormat("EEE MMM dd");
-        return shortenedDateFormat.format(time);
-    }
-
-    /**
-     * Prepare the weather high/lows for presentation.
-     */
-    private String formatHighLows(double high, double low, String unitType) {
-        // For presentation, assume the user doesn't care about tenths of a degree.
-        if (unitType.equals(mContext.getString(R.string.pref_units_imperial))) {
-            high = (high * 1.8) + 32;
-            low = (low * 1.8) + 32;
-        } else if (!unitType.equals(mContext.getString(R.string.pref_units_metric))) {
-            Log.d(LOG_TAG, "Unit type not found: " + unitType);
-        }
-
-        long roundedHigh = Math.round(high);
-        long roundedLow = Math.round(low);
-
-        String highLowStr = roundedHigh + "/" + roundedLow;
-        return highLowStr;
-    }
-
 }
