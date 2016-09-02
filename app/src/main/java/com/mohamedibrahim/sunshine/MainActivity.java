@@ -37,6 +37,7 @@ public class MainActivity extends ActionBarActivity {
             case R.id.action_settings:
                 Intent settingIntent = new Intent(this, SettingsActivity.class);
                 startActivity(settingIntent);
+                break;
             case R.id.action_map:
                 openPreferredLocationInMap();
                 break;
